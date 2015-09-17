@@ -25,12 +25,12 @@
  */
 char* MakeStringCopy(const char* string)
 {
-	if (string == NULL)
-		return NULL;
-	
-	char* res = (char*)malloc(strlen(string) + 1);
-	strcpy(res, string);
-	return res;
+    if (string == NULL)
+        return NULL;
+    
+    char* res = (char*)malloc(strlen(string) + 1);
+    strcpy(res, string);
+    return res;
 }
 
 /**
@@ -61,12 +61,12 @@ NSSet* m_skus;
  */
 NSMutableArray* m_skuMap;
 
-- (void)storePurchase:(NSString *)sku
+- (void)storePurchase:(NSString *)sku withReceipt:(NSString *)receipt
 {
     NSUserDefaults *standardUserDefaults = [NSUserDefaults standardUserDefaults];
     if (standardUserDefaults)
     {
-        [standardUserDefaults setBool:YES forKey:sku];
+        [standardUserDefaults setObject:receipt forKey:sku];
         [standardUserDefaults synchronize];
     }
     else
@@ -78,9 +78,9 @@ NSMutableArray* m_skuMap;
 
 + (AppStoreDelegate*)instance
 {
-	static AppStoreDelegate* instance = nil;
-	if (!instance)
-		instance = [[AppStoreDelegate alloc] init];
+    static AppStoreDelegate* instance = nil;
+    if (!instance)
+        instance = [[AppStoreDelegate alloc] init];
     
     return instance;
 }
@@ -109,8 +109,8 @@ NSMutableArray* m_skuMap;
 {
     m_skus = [skus retain];
     SKProductsRequest *request = [[SKProductsRequest alloc] initWithProductIdentifiers:skus];
-	request.delegate = self;
-	[request start];
+    request.delegate = self;
+    [request start];
 }
 
 // Setup handler
@@ -176,28 +176,31 @@ NSMutableArray* m_skuMap;
         NSLog(@"Couldn't access purchase storage. Purchase map won't be available.");
     else
         for (NSString* sku in m_skus)
-            if ([standardUserDefaults boolForKey:sku])
+        {
+            NSString* receipt = [standardUserDefaults objectForKey:sku];
+            if (receipt != nil)
             {
-                // TODO: Probably store all purchase information. Not only sku
-                // Setup purchase
-                NSDictionary* purchase = [NSDictionary dictionaryWithObjectsAndKeys:
-                                          @"product", @"itemType",
-                                          @"", @"orderId",
-                                          @"", @"packageName",
-                                          sku, @"sku",
-                                          [NSNumber numberWithLong:0], @"purchaseTime",
-                                          // TODO: copy constants from Android if ever needed
-                                          [NSNumber numberWithInt:0], @"purchaseState",
-                                          @"", @"developerPayload",
-                                          @"", @"token",
-                                          @"", @"originalJson",
-                                          @"", @"signature",
-                                          @"", @"appstoreName",
-                                          nil];
+                NSDictionary *requestContents = [NSDictionary dictionaryWithObjectsAndKeys:
+                                                 sku, @"sku",
+                                                 receipt, @"receipt",
+                                                 nil];
                 
-                NSArray* entry = [NSArray arrayWithObjects:sku, purchase, nil];
+                NSError *error;
+                NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestContents
+                                                                      options:0
+                                                                        error:&error];
+                if (!requestData) {
+                    NSLog(@"Got an error while creating the JSON object: %@", error);
+                    return;
+                }
+                
+                NSString * jsonString = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];
+                
+                NSArray* entry = [NSArray arrayWithObjects:sku, jsonString, nil];
                 [purchaseMap addObject:entry];
             }
+        }
+    
     
     [inventory setObject:purchaseMap forKey:@"purchaseMap"];
     [inventory setObject:m_skuMap forKey:@"skuMap"];
@@ -205,7 +208,7 @@ NSMutableArray* m_skuMap;
     NSError* error = nil;
     NSData* jsonData = [NSJSONSerialization dataWithJSONObject:inventory options:kNilOptions error:&error];
     NSString* message = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-	UnitySendMessage(EventHandler, "OnQueryInventorySucceeded", MakeStringCopy([message UTF8String]));
+    UnitySendMessage(EventHandler, "OnQueryInventorySucceeded", MakeStringCopy([message UTF8String]));
 }
 
 - (void)restorePurchases
@@ -223,57 +226,57 @@ NSMutableArray* m_skuMap;
 
 - (void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray *)transactions
 {
-	for (SKPaymentTransaction *transaction in transactions)
-	{
-		switch (transaction.transactionState)
-		{
-			case SKPaymentTransactionStateFailed:
+    for (SKPaymentTransaction *transaction in transactions)
+    {
+        switch (transaction.transactionState)
+        {
+            case SKPaymentTransactionStateFailed:
                 if (transaction.error == nil)
                     UnitySendMessage(EventHandler, "OnPurchaseFailed", MakeStringCopy("Transaction failed"));
                 else if (transaction.error.code == SKErrorPaymentCancelled)
                     UnitySendMessage(EventHandler, "OnPurchaseFailed", MakeStringCopy("Transaction cancelled"));
                 else
                     UnitySendMessage(EventHandler, "OnPurchaseFailed", MakeStringCopy([[transaction.error localizedDescription] UTF8String]));
-				[[SKPaymentQueue defaultQueue] finishTransaction:transaction];
-				break;
+                [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
+                break;
                 
             case SKPaymentTransactionStateRestored:
-                [self storePurchase:transaction.payment.productIdentifier];
+                [self storePurchase:transaction.payment.productIdentifier withReceipt:[transaction.transactionReceipt base64Encoding]];
                 UnitySendMessage(EventHandler, "OnPurchaseRestored", MakeStringCopy([transaction.originalTransaction.payment.productIdentifier UTF8String]));
                 [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
-				break;
+                break;
                 
-			case SKPaymentTransactionStatePurchased:
-				[self storePurchase:transaction.payment.productIdentifier];
-				NSDictionary *requestContents = [NSDictionary dictionaryWithObjectsAndKeys:
-												 transaction.payment.productIdentifier, @"sku",
-												 [transaction.transactionReceipt base64Encoding], @"receipt",
-												 nil];
-				NSError *error;
-				NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestContents
-																	  options:0
-																		error:&error];
-				if (!requestData) {
-					NSLog(@"Got an error while creating the JSON object: %@", error);
-					return;
-				}
-				
-				NSString * jsonString = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];
-				UnitySendMessage(EventHandler, "OnPurchaseSucceeded", MakeStringCopy([jsonString UTF8String]));
-				[[SKPaymentQueue defaultQueue] finishTransaction:transaction];
-				break;
-		}
-	}
+            case SKPaymentTransactionStatePurchased:
+                [self storePurchase:transaction.payment.productIdentifier withReceipt:[transaction.transactionReceipt base64Encoding]];
+                NSDictionary *requestContents = [NSDictionary dictionaryWithObjectsAndKeys:
+                                                 transaction.payment.productIdentifier, @"sku",
+                                                 [transaction.transactionReceipt base64Encoding], @"receipt",
+                                                 nil];
+                NSError *error;
+                NSData *requestData = [NSJSONSerialization dataWithJSONObject:requestContents
+                                                                      options:0
+                                                                        error:&error];
+                if (!requestData) {
+                    NSLog(@"Got an error while creating the JSON object: %@", error);
+                    return;
+                }
+                
+                NSString * jsonString = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];
+                UnitySendMessage(EventHandler, "OnPurchaseSucceeded", MakeStringCopy([jsonString UTF8String]));
+                [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
+                break;
+        }
+    }
 }
 
 - (void)paymentQueue:(SKPaymentQueue*)queue restoreCompletedTransactionsFailedWithError:(NSError*)error
 {
-	UnitySendMessage(EventHandler, "OnRestoreFailed", MakeStringCopy([[error localizedDescription] UTF8String]));
+    UnitySendMessage(EventHandler, "OnRestoreFailed", MakeStringCopy([[error localizedDescription] UTF8String]));
 }
 
 - (void)paymentQueueRestoreCompletedTransactionsFinished:(SKPaymentQueue*)queue
 {
-	UnitySendMessage(EventHandler, "OnRestoreFinished", MakeStringCopy(""));
+    UnitySendMessage(EventHandler, "OnRestoreFinished", MakeStringCopy(""));
 }
 
 @end

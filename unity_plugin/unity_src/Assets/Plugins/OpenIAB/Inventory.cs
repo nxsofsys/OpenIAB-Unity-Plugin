@@ -37,20 +37,18 @@ namespace OnePF
             {
                 List<object> pair = (List<object>) entry;
 #if UNITY_IOS
-				string key = OpenIAB_iOS.StoreSku2Sku(pair[0].ToString());
-				// TODO: use same cotr on all platforms. Test why it works on Android json
-                Purchase value = new Purchase((JSON) pair[1]);
+                string key = OpenIAB_iOS.StoreSku2Sku(pair[0].ToString());
 #else
                 string key = pair[0].ToString();
-                Purchase value = new Purchase(pair[1].ToString());
 #endif
+                Purchase value = new Purchase(pair[1].ToString());
                 _purchaseMap.Add(key, value);
             }
             foreach (var entry in (List<object>) j.fields["skuMap"])
             {
                 List<object> pair = (List<object>) entry;
 #if UNITY_IOS
-				string key = OpenIAB_iOS.StoreSku2Sku(pair[0].ToString());
+                string key = OpenIAB_iOS.StoreSku2Sku(pair[0].ToString());
                 SkuDetails value = new SkuDetails((JSON) pair[1]);
 #else
                 string key = pair[0].ToString();

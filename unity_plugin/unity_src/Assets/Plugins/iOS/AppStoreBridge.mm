@@ -76,7 +76,8 @@ extern "C"
         NSUserDefaults *standardUserDefaults = [NSUserDefaults standardUserDefaults];
         if (standardUserDefaults)
         {
-            return [standardUserDefaults boolForKey:ToString(sku)];
+            NSString* receipt = [standardUserDefaults objectForKey:ToString(sku)];
+            return receipt != nil;
         }
         else
         {
