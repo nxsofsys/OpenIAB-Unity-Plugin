@@ -17,7 +17,7 @@
 #import "AppStoreDelegate.h"
 #import <StoreKit/StoreKit.h>
 
-/** 
+/**
  * Helper method to create C string copy
  * By default mono string marshaler creates .Net string for returned UTF-8 C string
  * and calls free for returned value, thus returned strings should be allocated on heap
@@ -95,11 +95,8 @@ NSMutableArray* m_skuMap;
 - (void)dealloc
 {
     [[SKPaymentQueue defaultQueue] removeTransactionObserver:self];
-    [m_skuMap release];
-    [m_skus release];
     m_skus = nil;
     m_skuMap = nil;
-    [super dealloc];
 }
 
 
@@ -107,7 +104,7 @@ NSMutableArray* m_skuMap;
 
 - (void)requestSKUs:(NSSet*)skus
 {
-    m_skus = [skus retain];
+    m_skus = skus;
     SKProductsRequest *request = [[SKProductsRequest alloc] initWithProductIdentifiers:skus];
     request.delegate = self;
     [request start];
